@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Congress Stock Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f172a; --surface: #1e293b; --surface2: #334155;
+      --border: #475569; --text: #f1f5f9; --muted: #94a3b8;
+      --accent: #3b82f6; --green: #22c55e; --red: #ef4444;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+    header h1 { font-size: 1.4rem; font-weight: 700; }
+    header p { color: var(--muted); font-size: 0.82rem; }
+    .reload-btn { padding: 0.35rem 0.9rem; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent); font-size: 0.78rem; cursor: pointer; }
+    .reload-btn:hover { background: var(--accent); color: #fff; }
+    .stats-bar { display: flex; gap: 1rem; padding: 1rem 1.5rem; flex-wrap: wrap; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1.25rem; flex: 1; min-width: 150px; }
+    .stat-card .lbl { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    .stat-card .val { font-size: 1.5rem; font-weight: 700; margin-top: 0.2rem; }
+    #loading { text-align: center; padding: 4rem; color: var(--muted); }
+    .spinner { width: 40px; height: 40px; margin: 0 auto 1rem; border: 3px solid var(--surface2); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .filters { padding: 0.65rem 1.5rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .flabel { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+    .fgroup { display: flex; gap: 0.35rem; align-items: center; }
+    .btn { padding: 0.3rem 0.7rem; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 0.78rem; cursor: pointer; transition: background .15s; }
+    .btn:hover { background: var(--surface2); }
+    .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.r.active { background: #ef4444; border-color: #ef4444; }
+    .btn.d.active { background: #3b82f6; border-color: #3b82f6; }
+    .btn.i.active { background: #a855f7; border-color: #a855f7; }
+    select.fsel { padding: 0.3rem 0.6rem; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 0.78rem; cursor: pointer; }
+    input.fsearch { padding: 0.3rem 0.75rem; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 0.78rem; width: 180px; }
+    input.fsearch::placeholder { color: var(--muted); }
+    .tbl-wrap { padding: 0.75rem 1.5rem; overflow-x: auto; }
+    .count { padding: 0.4rem 1.5rem; color: var(--muted); font-size: 0.78rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    thead th { text-align: left; padding: 0.55rem 0.7rem; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border); white-space: nowrap; user-select: none; cursor: pointer; }
+    thead th:hover { color: var(--text); }
+    tbody tr.member-row { border-bottom: 1px solid var(--border); cursor: pointer; transition: background .1s; }
+    tbody tr.member-row:hover { background: var(--surface); }
+    tbody tr.member-row.open  { background: var(--surface); }
+    tbody td { padding: 0.65rem 0.7rem; vertical-align: middle; }
+    .chevron { display: inline-block; color: var(--muted); transition: transform .2s; font-size: 1rem; }
+    .open .chevron { transform: rotate(90deg); }
+    .badge { display: inline-block; padding: 0.12rem 0.45rem; border-radius: 4px; font-size: 0.72rem; font-weight: 700; }
+    .party-R { background: rgba(239,68,68,.18); color: #fca5a5; }
+    .party-D { background: rgba(59,130,246,.18); color: #93c5fd; }
+    .party-I { background: rgba(168,85,247,.18); color: #d8b4fe; }
+    .party-Unknown { background: rgba(148,163,184,.15); color: #cbd5e1; }
+    .cbadge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.68rem; background: var(--surface2); color: var(--muted); }
+    .vbar-wrap { display: flex; align-items: center; gap: 0.45rem; }
+    .vbar { height: 6px; border-radius: 3px; background: var(--accent); min-width: 2px; }
+    tr.detail-row td { padding: 0; cursor: default; }
+    tr.detail-row:hover { background: transparent !important; }
+    .detail { padding: 1.25rem 1.5rem; background: var(--surface); border-bottom: 2px solid var(--accent); }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.25rem; }
+    .chart-box { background: var(--bg); border-radius: 8px; padding: 1rem; }
+    .chart-box h4 { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 0.65rem; }
+    .tx-tbl { width: 100%; font-size: 0.78rem; margin-top: 0.5rem; }
+    .tx-tbl th { color: var(--muted); text-align: left; padding: 0.35rem 0.45rem; border-bottom: 1px solid var(--border); }
+    .tx-tbl td { padding: 0.35rem 0.45rem; border-bottom: 1px solid rgba(71,85,105,.25); }
+    .buy { color: var(--green); } .sell { color: var(--red); } .oth { color: var(--muted); }
+    .type-badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.72rem; font-weight: 700; letter-spacing: .04em; }
+    .type-badge.buy  { background: rgba(34,197,94,.18);  color: #4ade80; }
+    .type-badge.sell { background: rgba(239,68,68,.18);  color: #f87171; }
+    .type-badge.oth  { background: rgba(148,163,184,.12); color: #94a3b8; }
+    .amt-tier { font-size: 0.75rem; margin-left: 0.35rem; opacity: .75; }
+    .ret-pos { color: #4ade80; font-weight: 600; }
+    .ret-neg { color: #f87171; font-weight: 600; }
+    .ret-na  { color: var(--muted); font-size: 0.7rem; }
+    .err { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); border-radius: 8px; padding: 0.75rem 1rem; color: #fca5a5; margin: 0.75rem 1.5rem; font-size: 0.85rem; }
+    .info { background: rgba(59,130,246,.1); border: 1px solid rgba(59,130,246,.3); border-radius: 8px; padding: 0.75rem 1rem; color: #93c5fd; margin: 0.75rem 1.5rem; font-size: 0.85rem; }
+    .rank-1 { color: #fbbf24; font-weight: 700; } .rank-2 { color: #e2e8f0; font-weight: 700; } .rank-3 { color: #f97316; font-weight: 700; }
+    .zh { display: block; font-size: 0.68rem; color: var(--muted); text-transform: none; letter-spacing: 0; margin-top: 0.1rem; }
+    .zh-th { display: block; font-size: 0.65rem; color: var(--muted); text-transform: none; letter-spacing: 0; font-weight: 400; }
+    @media (max-width: 768px) {
+      .tbl-wrap { padding: 0.5rem; } .detail-grid { grid-template-columns: 1fr; }
+      thead th:nth-child(4), tbody td:nth-child(4), thead th:nth-child(7), tbody td:nth-child(7) { display: none; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>&#127963; Congress Stock Tracker</h1>
+    <p id="subtitle">Loading data...</p>
+  </div>
+  <button class="reload-btn" onclick="location.reload()">&#8635; Refresh 重新整理</button>
+</header>
+<div class="stats-bar" id="stats-bar" style="display:none">
+  <div class="stat-card"><div class="lbl">Politicians Tracked<span class="zh">追蹤議員數</span></div><div class="val" id="s-members">-</div></div>
+  <div class="stat-card"><div class="lbl">Transactions Loaded<span class="zh">已載入交易數</span></div><div class="val" id="s-txns">-</div></div>
+  <div class="stat-card"><div class="lbl">Est. Total Volume<span class="zh">預估總金額</span></div><div class="val" id="s-vol">-</div></div>
+  <div class="stat-card"><div class="lbl">Buy / Sell Ratio<span class="zh">買入／賣出比</span></div><div class="val" id="s-ratio">-</div></div>
+</div>
+<div class="filters" id="filters" style="display:none">
+  <div class="fgroup">
+    <span class="flabel">Chamber 議院：</span>
+    <button class="btn active" data-f="chamber" data-v="all">All 全部</button>
+    <button class="btn"        data-f="chamber" data-v="house">House 眾議院</button>
+    <button class="btn"        data-f="chamber" data-v="senate">Senate 參議院</button>
+  </div>
+  <div class="fgroup">
+    <span class="flabel">Party 政黨：</span>
+    <button class="btn active" data-f="party" data-v="all">All 全部</button>
+    <button class="btn r"      data-f="party" data-v="R">R 共和黨</button>
+    <button class="btn d"      data-f="party" data-v="D">D 民主黨</button>
+    <button class="btn i"      data-f="party" data-v="I">I 獨立</button>
+  </div>
+  <div class="fgroup">
+    <span class="flabel">Sort 排序：</span>
+    <select class="fsel" id="sort-sel">
+      <option value="volume">Volume 金額（高→低）</option>
+      <option value="count">Transactions 交易數（高→低）</option>
+      <option value="name">Name 姓名（A→Z）</option>
+      <option value="buy">Buy % 買入比例（高→低）</option>
+    </select>
+  </div>
+  <input class="fsearch" id="search" type="text" placeholder="Search 搜尋議員...">
+</div>
+<div id="loading"><div class="spinner"></div><div id="load-msg">讀取資料中 Reading data.json...</div></div>
+<div id="errs"></div>
+<div id="info-box"></div>
+<div class="count" id="count" style="display:none"></div>
+<div class="tbl-wrap" id="tbl-wrap" style="display:none">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:26px"></th><th>#</th>
+        <th>Politician<span class="zh-th">議員</span></th>
+        <th>Chamber<span class="zh-th">議院</span></th>
+        <th>Party<span class="zh-th">政黨</span></th>
+        <th>Txns<span class="zh-th">交易數</span></th>
+        <th>Buy %<span class="zh-th">買入比例</span></th>
+        <th>Est. Volume<span class="zh-th">預估金額</span></th>
+        <th>Top Stock<span class="zh-th">最常交易</span></th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<script>
+var S={all:[],filter:{chamber:'all',party:'all'},sort:'volume',search:'',openIdx:null,charts:{},maxVol:1,meta:{}};
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function fmtVol(n){if(n>=1e9)return'$'+(n/1e9).toFixed(1)+'B';if(n>=1e6)return'$'+(n/1e6).toFixed(1)+'M';if(n>=1e3)return'$'+(n/1e3).toFixed(0)+'K';return'$'+Math.round(n);}
+function topN(obj,n){return Object.entries(obj||{}).sort(function(a,b){return b[1]-a[1];}).slice(0,n);}
+
+function load(){
+  setMsg('Reading data.json...');
+  fetch('data.json')
+    .then(function(r){
+      if(!r.ok) throw new Error('data.json not found (HTTP '+r.status+'). Run fetch_congress.py first.');
+      return r.json();
+    })
+    .then(function(data){
+      S.all = data.members || [];
+      S.meta = {total: data.total_trades, fetched_at: data.fetched_at};
+      S.maxVol = S.all.reduce(function(m,x){return Math.max(m,x.vol);},1);
+      renderStats();
+      document.getElementById('loading').style.display='none';
+      document.getElementById('stats-bar').style.display='flex';
+      document.getElementById('filters').style.display='flex';
+      document.getElementById('tbl-wrap').style.display='block';
+      document.getElementById('count').style.display='block';
+      var fa = data.fetched_at ? new Date(data.fetched_at).toLocaleString() : '?';
+      document.getElementById('subtitle').textContent = '資料來源：Capitol Trades・最後更新 Last updated: ' + fa;
+      renderTable();
+    })
+    .catch(function(e){
+      document.getElementById('loading').style.display='none';
+      addErr(e.message);
+      var ib=document.getElementById('info-box');
+      ib.innerHTML='<div class="info"><strong>如何更新資料 How to update:</strong> 在 <code>D:\\US stock tool\\</code> 執行 <code>python fetch_congress.py</code>，完成後重新整理此頁面。<br>資料儲存於本機 <code>data.json</code>，檢視時不需要網路連線。</div>';
+    });
+}
+
+function setMsg(m){var el=document.getElementById('load-msg');if(el)el.textContent=m;}
+function addErr(m){var d=document.createElement('div');d.className='err';d.textContent='Error: '+m;document.getElementById('errs').appendChild(d);}
+
+function renderStats(){
+  var a=S.all;
+  var t=a.reduce(function(s,m){return s+(m.buy+m.sell+m.other);},0);
+  var v=a.reduce(function(s,m){return s+m.vol;},0);
+  var b=a.reduce(function(s,m){return s+m.buy;},0);
+  var sl=a.reduce(function(s,m){return s+m.sell;},0);
+  document.getElementById('s-members').textContent=a.length.toLocaleString();
+  document.getElementById('s-txns').textContent=t.toLocaleString()+(S.meta.total?' / '+S.meta.total.toLocaleString():'');
+  document.getElementById('s-vol').textContent=fmtVol(v);
+  document.getElementById('s-ratio').textContent=sl>0?(b/sl).toFixed(2)+'x':'-';
+}
+
+function filtered(){
+  var list=S.all;
+  if(S.filter.chamber!=='all')list=list.filter(function(m){return m.chamber===S.filter.chamber;});
+  if(S.filter.party!=='all')list=list.filter(function(m){return m.party===S.filter.party;});
+  if(S.search){var q=S.search.toLowerCase();list=list.filter(function(m){return m.name.toLowerCase().indexOf(q)>=0;});}
+  return list.slice().sort(function(a,b){
+    if(S.sort==='name')return a.name.localeCompare(b.name);
+    if(S.sort==='count')return(b.buy+b.sell+b.other)-(a.buy+a.sell+a.other);
+    if(S.sort==='buy'){var ra=a.buy/Math.max(1,a.buy+a.sell),rb=b.buy/Math.max(1,b.buy+b.sell);return rb-ra;}
+    return b.vol-a.vol;
+  });
+}
+
+function renderTable(){
+  Object.values(S.charts).forEach(function(c){try{c.destroy();}catch(_){}});
+  S.charts={};S.openIdx=null;
+  var list=filtered();
+  document.getElementById('count').textContent='顯示 Showing '+list.length+' / '+S.all.length+' 位議員 politicians';
+  var html='';
+  for(var i=0;i<list.length;i++){
+    var m=list[i];
+    var total=m.buy+m.sell+m.other;
+    var buyPct=total>0?Math.round(m.buy/total*100):0;
+    var top1=topN(m.stocks,1);
+    var topTick=top1.length?top1[0][0]:'-';
+    var barW=Math.max(2,Math.round(m.vol/S.maxVol*100));
+    var rankCls=i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'';
+    html+='<tr class="member-row" data-i="'+i+'">'
+      +'<td><span class="chevron">&#x203A;</span></td>'
+      +'<td class="'+rankCls+'">'+(i+1)+'</td>'
+      +'<td><strong>'+esc(m.name)+'</strong>'+(m.state?'<br><span style="font-size:.7rem;color:var(--muted)">'+esc(m.state)+'</span>':'')+'</td>'
+      +'<td><span class="cbadge">'+(m.chamber==='house'?'眾議院 House':m.chamber==='senate'?'參議院 Senate':'?')+'</span></td>'
+      +'<td><span class="badge party-'+m.party+'">'+m.party+'</span></td>'
+      +'<td>'+total.toLocaleString()+'</td>'
+      +'<td style="color:'+(buyPct>50?'var(--green)':'var(--red)')+'">'+buyPct+'%</td>'
+      +'<td><div class="vbar-wrap"><div class="vbar" style="width:'+barW+'px"></div><span>'+fmtVol(m.vol)+'</span></div></td>'
+      +'<td style="color:var(--accent);font-weight:600">'+esc(topTick)+'</td>'
+      +'</tr>'
+      +'<tr class="detail-row" id="dr-'+i+'" style="display:none"><td colspan="9"><div class="detail" id="dc-'+i+'"></div></td></tr>';
+  }
+  var tbody=document.getElementById('tbody');
+  tbody.innerHTML=html;
+  tbody.querySelectorAll('.member-row').forEach(function(row){
+    row.addEventListener('click',function(){toggle(row,list);});
+  });
+}
+
+function toggle(row,list){
+  var i=parseInt(row.dataset.i,10);
+  if(S.openIdx!==null){
+    var prev=S.openIdx;
+    var pdr=document.getElementById('dr-'+prev);
+    if(pdr)pdr.style.display='none';
+    var prow=document.querySelector('.member-row[data-i="'+prev+'"]');
+    if(prow)prow.classList.remove('open');
+    ['pie','bar'].forEach(function(k){var key=k+'-'+prev;if(S.charts[key]){S.charts[key].destroy();delete S.charts[key];}});
+    if(S.openIdx===i){S.openIdx=null;return;}
+  }
+  S.openIdx=i;
+  row.classList.add('open');
+  var dr=document.getElementById('dr-'+i);
+  dr.style.display='table-row';
+  var m=list[i];
+  document.getElementById('dc-'+i).innerHTML=buildDetail(m,i);
+  drawCharts(m,i);
+}
+
+function amtTier(s){
+  if(!s||s==='-')return'';
+  var pairs=s.replace(/[$,\s]/g,'').match(/\d+\.?\d*[KMBkmb]?/g)||[];
+  var mults={'k':1e3,'m':1e6,'b':1e9};
+  var nums=pairs.map(function(p){var m=p.match(/^(\d+\.?\d*)([KMBkmb]?)$/);return m?parseFloat(m[1])*(mults[m[2].toLowerCase()]||1):0;}).filter(Boolean);
+  var mid=nums.length>=2?(nums[0]+nums[1])/2:nums[0]||0;
+  if(mid<=0)return'';
+  if(mid<15e3)  return'<span class="amt-tier" title="&lt;$15K">$</span>';
+  if(mid<250e3) return'<span class="amt-tier" title="$15K–$250K">$$</span>';
+  if(mid<5e6)   return'<span class="amt-tier" title="$250K–$5M">$$$</span>';
+                return'<span class="amt-tier" title="&gt;$5M">$$$$</span>';
+}
+function fmtRet(tx){
+  if(tx.return_pct==null)return'<span class="ret-na">—</span>';
+  var r=tx.return_pct,d=tx.hold_days||0;
+  var sign=r>=0?'+':'';
+  var cls=r>=0?'ret-pos':'ret-neg';
+  var tip='trade $'+(tx.trade_price||'?')+' → now $'+(tx.current_price||'?')+' ('+d+'d)';
+  return'<span class="'+cls+'" title="'+tip+'">'+sign+r.toFixed(1)+'%</span>';
+}
+function buildDetail(m,i){
+  var recent=(m.recent||[]).slice(0,25);
+  var txRows=recent.map(function(tx){
+    var type=(tx.type||'').toUpperCase();
+    var cls=type.indexOf('BUY')>=0||type.indexOf('PURCHASE')>=0?'buy':type.indexOf('SELL')>=0?'sell':'oth';
+    var ticker=tx.ticker||'-';
+    var asset=(tx.asset||'').slice(0,40);
+    return'<tr>'
+      +'<td>'+esc(tx.date||'-')+'</td>'
+      +'<td style="color:var(--accent);font-weight:600">'+esc(ticker)+'</td>'
+      +'<td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(asset)+'</td>'
+      +'<td><span class="type-badge '+cls+'">'+esc(tx.type||'-')+'</span></td>'
+      +'<td>'+esc(tx.amount||'-')+amtTier(tx.amount)+'</td>'
+      +'<td>'+fmtRet(tx)+'</td>'
+      +'</tr>';
+  }).join('');
+  return'<div class="detail-grid">'
+    +'<div class="chart-box"><h4>Buy / Sell Breakdown 買入／賣出分析</h4><canvas id="pie-'+i+'" style="max-height:200px"></canvas></div>'
+    +'<div class="chart-box"><h4>Top 5 Stocks 交易最多前5檔股票</h4><canvas id="bar-'+i+'" style="max-height:200px"></canvas></div>'
+    +'</div>'
+    +'<h4 style="color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Recent Transactions 最近交易（最多25筆）</h4>'
+    +'<table class="tx-tbl"><thead><tr><th>Date 日期</th><th>Ticker 代號</th><th>Asset 資產名稱</th><th>Type 類型</th><th>Amount 金額</th><th>Return 報酬率</th></tr></thead>'
+    +'<tbody>'+txRows+'</tbody></table>';
+}
+
+function drawCharts(m,i){
+  var pieEl=document.getElementById('pie-'+i);
+  if(pieEl){
+    S.charts['pie-'+i]=new Chart(pieEl.getContext('2d'),{
+      type:'doughnut',
+      data:{labels:['Buy 買入','Sell 賣出','Other 其他'],datasets:[{data:[m.buy,m.sell,m.other],backgroundColor:['#22c55e','#ef4444','#64748b'],borderWidth:0}]},
+      options:{responsive:true,plugins:{legend:{labels:{color:'#f1f5f9',font:{size:11}}}}}
+    });
+  }
+  var barEl=document.getElementById('bar-'+i);
+  if(barEl){
+    var top5=topN(m.stocks,5);
+    S.charts['bar-'+i]=new Chart(barEl.getContext('2d'),{
+      type:'bar',
+      data:{labels:top5.map(function(x){return x[0];}),datasets:[{label:'交易數 Txns',data:top5.map(function(x){return x[1];}),backgroundColor:'#3b82f6',borderRadius:4}]},
+      options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8'},grid:{color:'#1e293b'}},y:{ticks:{color:'#94a3b8',precision:0},grid:{color:'#334155'}}}}
+    });
+  }
+}
+
+document.querySelectorAll('[data-f]').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var f=btn.dataset.f,v=btn.dataset.v;
+    S.filter[f]=v;
+    document.querySelectorAll('[data-f="'+f+'"]').forEach(function(b){b.classList.remove('active');});
+    btn.classList.add('active');
+    renderTable();
+  });
+});
+document.getElementById('sort-sel').addEventListener('change',function(e){S.sort=e.target.value;renderTable();});
+document.getElementById('search').addEventListener('input',function(e){S.search=e.target.value.trim();renderTable();});
+
+load();
+</script>
+</body>
+</html>
