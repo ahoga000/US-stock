@@ -266,11 +266,22 @@ def main():
 
     port = 8765
     folder = OUTPUT.parent
+
+    # Kill any existing process on this port
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if s.connect_ex(('localhost', port)) == 0:
+            subprocess.run(
+                f'for /f "tokens=5" %a in (\'netstat -ano ^| findstr :{port}\') do taskkill /PID %a /F',
+                shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            time.sleep(1)
+
     subprocess.Popen(
         [sys.executable, '-m', 'http.server', str(port), '--directory', str(folder)],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
-    time.sleep(1)
+    time.sleep(2)
     url = f'http://localhost:{port}/congress_dashboard.html'
     webbrowser.open(url)
     print(f'Opened {url}')
