@@ -285,4 +285,11 @@ def main():
             print('\nServer stopped.')
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print('\nStopped.')
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        input('\nPress Enter to exit...')
