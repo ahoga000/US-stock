@@ -8,7 +8,7 @@
   3. 合併資料 → data.json
   4. 用 yfinance 抓每筆交易當天股價 → 計算報酬率 → 寫回 data.json
 """
-import asyncio, json, re, time
+import asyncio, json, re, time, subprocess, webbrowser, sys
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -263,6 +263,17 @@ def main():
     OUTPUT.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding='utf-8')
     elapsed = int(time.time() - t0)
     print(f'\nDone in {elapsed}s -> {OUTPUT}')
+
+    port = 8765
+    folder = OUTPUT.parent
+    subprocess.Popen(
+        [sys.executable, '-m', 'http.server', str(port), '--directory', str(folder)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    time.sleep(1)
+    url = f'http://localhost:{port}/congress_dashboard.html'
+    webbrowser.open(url)
+    print(f'Opened {url}')
 
 if __name__ == '__main__':
     main()
