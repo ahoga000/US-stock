@@ -422,7 +422,13 @@ function renderStocks(){
   var arr=[];for(var k in S.aggStocks){var e=S.aggStocks[k];if(!e.returns.length)continue;arr.push({tk:k,avg:lbMean(e.returns),n:e.returns.length,pn:Object.keys(e.pols).length,last:e.lastS});}
   arr=arr.filter(function(x){return x.n>=S.stockMin;});
   arr.sort(function(p,q){return S.stockSort==='worst'?p.avg-q.avg:q.avg-p.avg;});
-  var rows='';for(var r=0;r<arr.length;r++){var x=arr[r];rows+='<tr class="lb-row"><td class="lb-tick">'+esc(x.tk)+'</td><td>'+lbPct(x.avg)+'</td><td>'+x.n+'</td><td>'+x.pn+'</td><td style="color:var(--muted)">'+esc(x.last||'—')+'</td></tr>';}
+  var rows='';for(var r=0;r<arr.length;r++){var x=arr[r];var e=S.aggStocks[x.tk];
+    var buys=[];for(var bi=0;bi<e.buyTx.length;bi++){var bt=e.buyTx[bi];if(bt.return_pct!=null&&!isNaN(bt.return_pct))buys.push(bt);}
+    buys.sort(function(p,q){return lbDate(q.date)-lbDate(p.date);});
+    var det='';for(var di=0;di<buys.length;di++){var t=buys[di];det+='<tr><td class="c">'+esc(t.name)+'</td><td class="c">'+esc(t.date||'-')+'</td><td class="c">'+esc(t.amount||'-')+'</td><td class="c">'+lbPct(t.return_pct)+'</td></tr>';}
+    rows+='<tr class="lb-row" onclick="lbHotToggle(this)"><td class="lb-tick">'+esc(x.tk)+'</td><td>'+lbPct(x.avg)+'</td><td>'+x.n+'</td><td>'+x.pn+'</td><td style="color:var(--muted)">'+esc(x.last||'—')+'</td></tr>'
+      +'<tr class="lb-detail" style="display:none"><td colspan="5"><table><thead><tr><th>議員 Politician</th><th>買入日期 Date</th><th>金額</th><th>報酬</th></tr></thead><tbody>'+det+'</tbody></table></td></tr>';
+  }
   var html='<div class="lb-wrap"><div class="lb-controls">'
     +'<button class="btn'+(S.stockSort!=='worst'?' active':'')+'" onclick="lbStockSort(\'best\')">漲最多 Best</button>'
     +'<button class="btn'+(S.stockSort==='worst'?' active':'')+'" onclick="lbStockSort(\'worst\')">跌最多 Worst</button>'
@@ -430,7 +436,7 @@ function renderStocks(){
     +'<button class="btn'+(S.stockMin===1?' active':'')+'" onclick="lbStockMin(1)">≥1 全部</button>'
     +'<button class="btn'+(S.stockMin===2?' active':'')+'" onclick="lbStockMin(2)">≥2</button>'
     +'<button class="btn'+(S.stockMin===3?' active':'')+'" onclick="lbStockMin(3)">≥3</button>'
-    +'<span class="lb-hint">只計買進(BUY)且已補價的交易・共 '+arr.length+' 檔（≥'+S.stockMin+' 筆・筆數越少越僅供參考）</span></div>'
+    +'<span class="lb-hint">只計買進(BUY)且已補價的交易・點列展開買入明細・共 '+arr.length+' 檔（≥'+S.stockMin+' 筆・筆數越少越僅供參考）</span></div>'
     +'<table class="lb-tbl"><thead><tr><th>Ticker</th><th>平均報酬 Avg</th><th>買進筆數</th><th>議員數</th><th>最近日期</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
   document.getElementById('tab-stocks').innerHTML=html;
 }
