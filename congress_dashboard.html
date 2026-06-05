@@ -82,7 +82,27 @@
     @media (max-width: 768px) {
       .tbl-wrap { padding: 0.5rem; } .detail-grid { grid-template-columns: 1fr; }
       thead th:nth-child(4), tbody td:nth-child(4), thead th:nth-child(7), tbody td:nth-child(7) { display: none; }
+      .hot-grid { grid-template-columns: 1fr !important; }
     }
+    .tabbar { display: flex; gap: 0.4rem; padding: 0.6rem 1.5rem 0; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .tabbtn { padding: 0.45rem 0.9rem; border: 1px solid var(--border); border-bottom: none; border-radius: 8px 8px 0 0; background: transparent; color: var(--muted); font-size: 0.82rem; cursor: pointer; }
+    .tabbtn:hover { color: var(--text); background: var(--surface2); }
+    .tabbtn.active { background: var(--bg); color: var(--text); border-color: var(--accent); font-weight: 700; }
+    .lb-wrap { padding: 1rem 1.5rem; }
+    .lb-controls { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; }
+    .lb-hint { color: var(--muted); font-size: 0.75rem; }
+    .lb-tbl { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .lb-tbl th { text-align: left; padding: 0.5rem 0.6rem; color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border); white-space: nowrap; user-select: none; }
+    .lb-tbl td { padding: 0.5rem 0.6rem; border-bottom: 1px solid rgba(71,85,105,.25); }
+    .lb-tbl tr.lb-row { cursor: pointer; }
+    .lb-tbl tr.lb-row:hover { background: var(--surface); }
+    .lb-tick { color: var(--accent); font-weight: 700; }
+    .lb-rank { color: var(--muted); width: 2rem; }
+    .hot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    .lb-detail td { background: var(--bg); padding: 0.5rem 0.75rem; }
+    .lb-detail table { width: 100%; font-size: 0.75rem; }
+    .lb-detail th { color: var(--muted); text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--border); }
+    .lb-detail td.c { padding: 0.3rem 0.4rem; border-bottom: 1px solid rgba(71,85,105,.2); }
   </style>
 </head>
 <body>
@@ -98,6 +118,12 @@
   <div class="stat-card"><div class="lbl">Transactions Loaded<span class="zh">已載入交易數</span></div><div class="val" id="s-txns">-</div></div>
   <div class="stat-card"><div class="lbl">Est. Total Volume<span class="zh">預估總金額</span></div><div class="val" id="s-vol">-</div></div>
   <div class="stat-card"><div class="lbl">Buy / Sell Ratio<span class="zh">買入／賣出比</span></div><div class="val" id="s-ratio">-</div></div>
+</div>
+<div class="tabbar" id="tabbar" style="display:none">
+  <button class="tabbtn active" data-tab="stocks">&#128202; 股票績效</button>
+  <button class="tabbtn" data-tab="hot">&#128293; 熱門買賣</button>
+  <button class="tabbtn" data-tab="people">&#127942; 人物榜</button>
+  <button class="tabbtn" data-tab="member">&#128100; 議員明細</button>
 </div>
 <div class="filters" id="filters" style="display:none">
   <div class="fgroup">
@@ -127,6 +153,10 @@
 <div id="loading"><div class="spinner"></div><div id="load-msg">讀取資料中 Reading data.json...</div></div>
 <div id="errs"></div>
 <div id="info-box"></div>
+<div id="tab-stocks" class="tabpane" style="display:none"></div>
+<div id="tab-hot" class="tabpane" style="display:none"></div>
+<div id="tab-people" class="tabpane" style="display:none"></div>
+<div id="tab-member" class="tabpane" style="display:none">
 <div class="count" id="count" style="display:none"></div>
 <div class="tbl-wrap" id="tbl-wrap" style="display:none">
   <table>
@@ -144,6 +174,7 @@
     </thead>
     <tbody id="tbody"></tbody>
   </table>
+</div>
 </div>
 
 <script>
@@ -167,12 +198,15 @@ function load(){
       renderStats();
       document.getElementById('loading').style.display='none';
       document.getElementById('stats-bar').style.display='flex';
+      document.getElementById('tabbar').style.display='flex';
       document.getElementById('filters').style.display='flex';
       document.getElementById('tbl-wrap').style.display='block';
       document.getElementById('count').style.display='block';
       var fa = data.fetched_at ? new Date(data.fetched_at).toLocaleString() : '?';
       document.getElementById('subtitle').textContent = '資料來源：Capitol Trades・最後更新 Last updated: ' + fa;
       renderTable();
+      buildAgg();
+      showTab('stocks');
     })
     .catch(function(e){
       document.getElementById('loading').style.display='none';
@@ -214,6 +248,7 @@ function renderTable(){
   Object.values(S.charts).forEach(function(c){try{c.destroy();}catch(_){}});
   S.charts={};S.openIdx=null;
   var list=filtered();
+  S.currentList=list;
   document.getElementById('count').textContent='顯示 Showing '+list.length+' / '+S.all.length+' 位議員 politicians';
   var html='';
   for(var i=0;i<list.length;i++){
@@ -340,6 +375,116 @@ document.querySelectorAll('[data-f]').forEach(function(btn){
 });
 document.getElementById('sort-sel').addEventListener('change',function(e){S.sort=e.target.value;renderTable();});
 document.getElementById('search').addEventListener('input',function(e){S.search=e.target.value.trim();renderTable();});
+
+// ===== Leaderboards (Tabs 1-3) =====
+S.tab='stocks';S.stockSort='best';S.stockMin=1;S.peopleAll=false;S.peopleSort={key:'avg',dir:'desc'};S.aggStocks={};S.aggPeople={};
+
+var LB_MON={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+function lbDate(s){if(!s)return 0;var p=String(s).trim().split(/\s+/);if(p.length<3)return 0;var d=parseInt(p[0],10),mo=LB_MON[(p[1]||'').slice(0,3).toLowerCase()],y=parseInt(p[2],10);if(isNaN(d)||mo==null||isNaN(y))return 0;return new Date(y,mo,d).getTime();}
+function lbKind(tx){var t=(tx.type||'').toLowerCase();if(t.indexOf('buy')>=0||t.indexOf('purchase')>=0)return'buy';if(t.indexOf('sell')>=0||t.indexOf('sale')>=0)return'sell';return'other';}
+function lbValid(tk){return tk&&/^[A-Z]{1,7}$/.test(tk);}
+function lbMean(a){if(!a.length)return null;var s=0;for(var i=0;i<a.length;i++)s+=a[i];return s/a.length;}
+function lbPct(v){if(v==null||isNaN(v))return'<span class="ret-na">&mdash;</span>';var sg=v>=0?'+':'';return'<span class="'+(v>=0?'ret-pos':'ret-neg')+'">'+sg+v.toFixed(1)+'%</span>';}
+
+function buildAgg(){
+  var sm={};
+  for(var i=0;i<S.all.length;i++){var m=S.all[i],rec=m.recent||[];
+    for(var j=0;j<rec.length;j++){var tx=rec[j];var tk=(tx.ticker||'').toUpperCase();if(!lbValid(tk))continue;
+      var e=sm[tk];if(!e){e=sm[tk]={tk:tk,returns:[],pols:{},buyCount:0,sellCount:0,buyTx:[],sellTx:[],lastT:0,lastS:''};}
+      var k=lbKind(tx);
+      if(k==='buy'){e.buyCount++;e.buyTx.push(tx);if(tx.return_pct!=null&&!isNaN(tx.return_pct)){e.returns.push(tx.return_pct);e.pols[tx.name]=1;}}
+      else if(k==='sell'){e.sellCount++;e.sellTx.push(tx);}
+      var t=lbDate(tx.date);if(t>e.lastT){e.lastT=t;e.lastS=tx.date||'';}
+    }
+  }
+  S.aggStocks=sm;
+  var pm={};
+  for(var a=0;a<S.all.length;a++){var mm=S.all[a],r2=mm.recent||[],rs=[],wins=0;
+    for(var b=0;b<r2.length;b++){var t2=r2[b];if(lbKind(t2)==='buy'&&t2.return_pct!=null&&!isNaN(t2.return_pct)){rs.push(t2.return_pct);if(t2.return_pct>0)wins++;}}
+    if(rs.length)pm[mm.name]={m:mm,returns:rs,wins:wins};
+  }
+  S.aggPeople=pm;
+}
+
+function showTab(id){
+  S.tab=id;
+  var btns=document.querySelectorAll('.tabbtn');
+  for(var i=0;i<btns.length;i++)btns[i].classList.toggle('active',btns[i].dataset.tab===id);
+  var panes=['stocks','hot','people','member'];
+  for(var j=0;j<panes.length;j++){var el=document.getElementById('tab-'+panes[j]);if(el)el.style.display=panes[j]===id?'block':'none';}
+  document.getElementById('filters').style.display=id==='member'?'flex':'none';
+  if(id==='stocks')renderStocks();
+  else if(id==='hot')renderHot();
+  else if(id==='people')renderPeople();
+}
+
+function renderStocks(){
+  var arr=[];for(var k in S.aggStocks){var e=S.aggStocks[k];if(!e.returns.length)continue;arr.push({tk:k,avg:lbMean(e.returns),n:e.returns.length,pn:Object.keys(e.pols).length,last:e.lastS});}
+  arr=arr.filter(function(x){return x.n>=S.stockMin;});
+  arr.sort(function(p,q){return S.stockSort==='worst'?p.avg-q.avg:q.avg-p.avg;});
+  var rows='';for(var r=0;r<arr.length;r++){var x=arr[r];rows+='<tr class="lb-row"><td class="lb-tick">'+esc(x.tk)+'</td><td>'+lbPct(x.avg)+'</td><td>'+x.n+'</td><td>'+x.pn+'</td><td style="color:var(--muted)">'+esc(x.last||'—')+'</td></tr>';}
+  var html='<div class="lb-wrap"><div class="lb-controls">'
+    +'<button class="btn'+(S.stockSort!=='worst'?' active':'')+'" onclick="lbStockSort(\'best\')">漲最多 Best</button>'
+    +'<button class="btn'+(S.stockSort==='worst'?' active':'')+'" onclick="lbStockSort(\'worst\')">跌最多 Worst</button>'
+    +'<span class="lb-hint" style="margin-left:.5rem">最少筆數 Min trades：</span>'
+    +'<button class="btn'+(S.stockMin===1?' active':'')+'" onclick="lbStockMin(1)">≥1 全部</button>'
+    +'<button class="btn'+(S.stockMin===2?' active':'')+'" onclick="lbStockMin(2)">≥2</button>'
+    +'<button class="btn'+(S.stockMin===3?' active':'')+'" onclick="lbStockMin(3)">≥3</button>'
+    +'<span class="lb-hint">只計買進(BUY)且已補價的交易・共 '+arr.length+' 檔（≥'+S.stockMin+' 筆・筆數越少越僅供參考）</span></div>'
+    +'<table class="lb-tbl"><thead><tr><th>Ticker</th><th>平均報酬 Avg</th><th>買進筆數</th><th>議員數</th><th>最近日期</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  document.getElementById('tab-stocks').innerHTML=html;
+}
+function lbStockSort(s){S.stockSort=s;renderStocks();}
+function lbStockMin(n){S.stockMin=n;renderStocks();}
+
+function lbHotTable(side){
+  var arr=[];for(var k in S.aggStocks){var e=S.aggStocks[k];var c=side==='buy'?e.buyCount:e.sellCount;if(c>0)arr.push(e);}
+  arr.sort(function(p,q){return side==='buy'?q.buyCount-p.buyCount:q.sellCount-p.sellCount;});
+  arr=arr.slice(0,30);
+  var rows='';for(var i=0;i<arr.length;i++){var e=arr[i];var c=side==='buy'?e.buyCount:e.sellCount;var txs=(side==='buy'?e.buyTx:e.sellTx).slice();
+    var pols={};for(var z=0;z<txs.length;z++)pols[txs[z].name]=1;
+    var refAvg=e.returns.length?lbMean(e.returns):null;
+    txs.sort(function(p,q){return lbDate(q.date)-lbDate(p.date);});
+    var det='';for(var d=0;d<txs.length;d++){var t=txs[d];det+='<tr><td class="c">'+esc(t.name)+'</td><td class="c">'+esc(t.date||'-')+'</td><td class="c">'+esc(t.amount||'-')+'</td><td class="c">'+(t.return_pct!=null?lbPct(t.return_pct):'<span class="ret-na">&mdash;</span>')+'</td></tr>';}
+    rows+='<tr class="lb-row" onclick="lbHotToggle(this)"><td class="lb-rank">'+(i+1)+'</td><td class="lb-tick">'+esc(e.tk)+'</td><td>'+c+'</td><td>'+Object.keys(pols).length+'</td><td>'+lbPct(refAvg)+'</td></tr>'
+      +'<tr class="lb-detail" style="display:none"><td colspan="5"><table><thead><tr><th>議員</th><th>日期</th><th>金額</th><th>報酬</th></tr></thead><tbody>'+det+'</tbody></table></td></tr>';
+  }
+  return '<table class="lb-tbl"><thead><tr><th>#</th><th>Ticker</th><th>筆數</th><th>議員數</th><th>買進平均報酬</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+function renderHot(){
+  document.getElementById('tab-hot').innerHTML='<div class="lb-wrap"><div class="hot-grid">'
+    +'<div><h3 style="margin-bottom:.6rem;font-size:.95rem">&#128994; 被買進最多 Top 30 Bought</h3>'+lbHotTable('buy')+'</div>'
+    +'<div><h3 style="margin-bottom:.6rem;font-size:.95rem">&#128308; 被賣出最多 Top 30 Sold</h3>'+lbHotTable('sell')+'</div></div>'
+    +'<div class="lb-hint" style="margin-top:.75rem">依交易筆數排序・點任一列展開誰在買/賣・「買進平均報酬」一律以該檔全部已補價的 BUY 計算（不套用 ≥3 門檻）</div></div>';
+}
+function lbHotToggle(row){var d=row.nextElementSibling;if(d&&d.className.indexOf('lb-detail')>=0)d.style.display=(d.style.display==='none'?'table-row':'none');}
+
+function renderPeople(){
+  var arr=[];for(var nm in S.aggPeople){var e=S.aggPeople[nm];if(!S.peopleAll&&e.returns.length<3)continue;arr.push({m:e.m,avg:lbMean(e.returns),n:e.returns.length,wr:e.wins/e.returns.length});}
+  var key=S.peopleSort.key,dir=S.peopleSort.dir;
+  arr.sort(function(p,q){var pv=key==='wr'?p.wr:key==='n'?p.n:p.avg,qv=key==='wr'?q.wr:key==='n'?q.n:q.avg;return dir==='asc'?pv-qv:qv-pv;});
+  var rows='';for(var i=0;i<arr.length;i++){var x=arr[i],m=x.m;rows+='<tr class="lb-row" data-name="'+esc(m.name)+'"><td class="lb-rank">'+(i+1)+'</td><td><strong>'+esc(m.name)+'</strong></td><td>'+lbPct(x.avg)+'</td><td>'+x.n+'</td><td>'+Math.round(x.wr*100)+'%</td><td><span class="badge party-'+m.party+'">'+m.party+'</span></td><td><span class="cbadge">'+(m.chamber==='house'?'House 眾':m.chamber==='senate'?'Senate 參':'?')+'</span></td></tr>';}
+  var html='<div class="lb-wrap"><div class="lb-controls">'
+    +'<button class="btn'+(S.peopleAll?' active':'')+'" onclick="lbPeopleThresh()">含不足3筆 Show all</button>'
+    +'<span class="lb-hint">只計買進(BUY)且已補價的交易・計入筆數 '+(S.peopleAll?'≥1':'≥3')+'・點議員看完整明細・共 '+arr.length+' 位</span></div>'
+    +'<table class="lb-tbl"><thead><tr><th>#</th><th>議員 Politician</th><th onclick="lbPeopleSort(\'avg\')">平均報酬 Avg &#8597;</th><th onclick="lbPeopleSort(\'n\')">計入筆數 &#8597;</th><th onclick="lbPeopleSort(\'wr\')">勝率 Win% &#8597;</th><th>政黨</th><th>議院</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  var box=document.getElementById('tab-people');box.innerHTML=html;
+  var rs=box.querySelectorAll('.lb-row');for(var r=0;r<rs.length;r++){rs[r].addEventListener('click',function(){openMember(this.dataset.name);});}
+}
+function lbPeopleThresh(){S.peopleAll=!S.peopleAll;renderPeople();}
+function lbPeopleSort(key){if(S.peopleSort.key===key)S.peopleSort.dir=S.peopleSort.dir==='asc'?'desc':'asc';else S.peopleSort={key:key,dir:'desc'};renderPeople();}
+
+function openMember(name){
+  S.filter={chamber:'all',party:'all'};S.search='';
+  var sb=document.getElementById('search');if(sb)sb.value='';
+  document.querySelectorAll('[data-f]').forEach(function(b){b.classList.toggle('active',b.dataset.v==='all');});
+  renderTable();
+  showTab('member');
+  var idx=-1;for(var i=0;i<S.currentList.length;i++){if(S.currentList[i].name===name){idx=i;break;}}
+  if(idx>=0){var row=document.querySelector('.member-row[data-i="'+idx+'"]');if(row){row.click();row.scrollIntoView({behavior:'smooth',block:'center'});}}
+}
+
+(function(){var tb=document.querySelectorAll('.tabbtn');for(var i=0;i<tb.length;i++)tb[i].addEventListener('click',function(){showTab(this.dataset.tab);});})();
 
 load();
 </script>
