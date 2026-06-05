@@ -8,7 +8,7 @@
   3. 合併資料 → data.json
   4. 用 yfinance 抓每筆交易當天股價 → 計算報酬率 → 寫回 data.json
 """
-import asyncio, json, re, time, subprocess, webbrowser, sys
+import asyncio, json, math, re, time, subprocess, webbrowser, sys
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -227,11 +227,13 @@ def enrich_prices(members_list):
                 hist.columns = hist.columns.get_level_values(0)
             close = hist['Close']
             current = float(close.iloc[-1])
+            if math.isnan(current):
+                print('no current price'); continue
             for mi, ti, trade_date in entries:
                 future = close[close.index >= trade_date.strftime('%Y-%m-%d')]
                 if future.empty: continue
                 tp = float(future.iloc[0])
-                if tp <= 0: continue
+                if math.isnan(tp) or tp <= 0: continue
                 members_list[mi]['recent'][ti].update({
                     'trade_price':   round(tp, 2),
                     'current_price': round(current, 2),
@@ -260,7 +262,7 @@ def main():
         'fetched_at':        datetime.now().isoformat(),
         'prices_updated_at': datetime.now().isoformat(),
     }
-    OUTPUT.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding='utf-8')
+    OUTPUT.write_text(json.dumps(out, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
     elapsed = int(time.time() - t0)
     print(f'\nDone in {elapsed}s -> {OUTPUT}')
 
