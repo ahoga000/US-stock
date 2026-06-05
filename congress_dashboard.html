@@ -123,6 +123,7 @@
   <button class="tabbtn active" data-tab="stocks">&#128202; 股票績效</button>
   <button class="tabbtn" data-tab="hot">&#128293; 熱門買賣</button>
   <button class="tabbtn" data-tab="people">&#127942; 人物榜</button>
+  <button class="tabbtn" data-tab="spike">&#128681; 可疑交易</button>
   <button class="tabbtn" data-tab="member">&#128100; 議員明細</button>
 </div>
 <div class="filters" id="filters" style="display:none">
@@ -156,6 +157,7 @@
 <div id="tab-stocks" class="tabpane" style="display:none"></div>
 <div id="tab-hot" class="tabpane" style="display:none"></div>
 <div id="tab-people" class="tabpane" style="display:none"></div>
+<div id="tab-spike" class="tabpane" style="display:none"></div>
 <div id="tab-member" class="tabpane" style="display:none">
 <div class="count" id="count" style="display:none"></div>
 <div class="tbl-wrap" id="tbl-wrap" style="display:none">
@@ -377,7 +379,7 @@ document.getElementById('sort-sel').addEventListener('change',function(e){S.sort
 document.getElementById('search').addEventListener('input',function(e){S.search=e.target.value.trim();renderTable();});
 
 // ===== Leaderboards (Tabs 1-3) =====
-S.tab='stocks';S.stockSort='best';S.stockMin=1;S.peopleAll=false;S.peopleSort={key:'avg',dir:'desc'};S.aggStocks={};S.aggPeople={};
+S.tab='stocks';S.stockSort='best';S.stockMin=1;S.peopleAll=false;S.peopleSort={key:'avg',dir:'desc'};S.spikeSort={key:'pct',dir:'desc'};S.aggStocks={};S.aggPeople={};S.spikeTrades=[];
 
 var LB_MON={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
 function lbDate(s){if(!s)return 0;var p=String(s).trim().split(/\s+/);if(p.length<3)return 0;var d=parseInt(p[0],10),mo=LB_MON[(p[1]||'').slice(0,3).toLowerCase()],y=parseInt(p[2],10);if(isNaN(d)||mo==null||isNaN(y))return 0;return new Date(y,mo,d).getTime();}
@@ -385,19 +387,21 @@ function lbKind(tx){var t=(tx.type||'').toLowerCase();if(t.indexOf('buy')>=0||t.
 function lbValid(tk){return tk&&/^[A-Z]{1,7}$/.test(tk);}
 function lbMean(a){if(!a.length)return null;var s=0;for(var i=0;i<a.length;i++)s+=a[i];return s/a.length;}
 function lbPct(v){if(v==null||isNaN(v))return'<span class="ret-na">&mdash;</span>';var sg=v>=0?'+':'';return'<span class="'+(v>=0?'ret-pos':'ret-neg')+'">'+sg+v.toFixed(1)+'%</span>';}
+function lbFlag(t){return t.spike3m?'<span title="買進後3個月內最高 +'+t.spike3m_pct+'%，第'+t.spike3m_days+'天" style="color:#fbbf24">&#128681;</span> ':'';}
 
 function buildAgg(){
-  var sm={};
+  var sm={},spikes=[];
   for(var i=0;i<S.all.length;i++){var m=S.all[i],rec=m.recent||[];
     for(var j=0;j<rec.length;j++){var tx=rec[j];var tk=(tx.ticker||'').toUpperCase();if(!lbValid(tk))continue;
-      var e=sm[tk];if(!e){e=sm[tk]={tk:tk,returns:[],pols:{},buyCount:0,sellCount:0,buyTx:[],sellTx:[],lastT:0,lastS:''};}
+      var e=sm[tk];if(!e){e=sm[tk]={tk:tk,returns:[],pols:{},buyCount:0,sellCount:0,buyTx:[],sellTx:[],lastT:0,lastS:'',spikeCount:0};}
       var k=lbKind(tx);
-      if(k==='buy'){e.buyCount++;e.buyTx.push(tx);if(tx.return_pct!=null&&!isNaN(tx.return_pct)){e.returns.push(tx.return_pct);e.pols[tx.name]=1;}}
+      if(k==='buy'){e.buyCount++;e.buyTx.push(tx);if(tx.return_pct!=null&&!isNaN(tx.return_pct)){e.returns.push(tx.return_pct);e.pols[tx.name]=1;}
+        if(tx.spike3m){e.spikeCount++;spikes.push(tx);}}
       else if(k==='sell'){e.sellCount++;e.sellTx.push(tx);}
       var t=lbDate(tx.date);if(t>e.lastT){e.lastT=t;e.lastS=tx.date||'';}
     }
   }
-  S.aggStocks=sm;
+  S.aggStocks=sm;S.spikeTrades=spikes;
   var pm={};
   for(var a=0;a<S.all.length;a++){var mm=S.all[a],r2=mm.recent||[],rs=[],wins=0;
     for(var b=0;b<r2.length;b++){var t2=r2[b];if(lbKind(t2)==='buy'&&t2.return_pct!=null&&!isNaN(t2.return_pct)){rs.push(t2.return_pct);if(t2.return_pct>0)wins++;}}
@@ -410,12 +414,13 @@ function showTab(id){
   S.tab=id;
   var btns=document.querySelectorAll('.tabbtn');
   for(var i=0;i<btns.length;i++)btns[i].classList.toggle('active',btns[i].dataset.tab===id);
-  var panes=['stocks','hot','people','member'];
+  var panes=['stocks','hot','people','spike','member'];
   for(var j=0;j<panes.length;j++){var el=document.getElementById('tab-'+panes[j]);if(el)el.style.display=panes[j]===id?'block':'none';}
   document.getElementById('filters').style.display=id==='member'?'flex':'none';
   if(id==='stocks')renderStocks();
   else if(id==='hot')renderHot();
   else if(id==='people')renderPeople();
+  else if(id==='spike')renderSpike();
 }
 
 function renderStocks(){
@@ -425,8 +430,9 @@ function renderStocks(){
   var rows='';for(var r=0;r<arr.length;r++){var x=arr[r];var e=S.aggStocks[x.tk];
     var buys=[];for(var bi=0;bi<e.buyTx.length;bi++){var bt=e.buyTx[bi];if(bt.return_pct!=null&&!isNaN(bt.return_pct))buys.push(bt);}
     buys.sort(function(p,q){return lbDate(q.date)-lbDate(p.date);});
-    var det='';for(var di=0;di<buys.length;di++){var t=buys[di];det+='<tr><td class="c">'+esc(t.name)+'</td><td class="c">'+esc(t.date||'-')+'</td><td class="c">'+esc(t.amount||'-')+'</td><td class="c">'+lbPct(t.return_pct)+'</td></tr>';}
-    rows+='<tr class="lb-row" onclick="lbHotToggle(this)"><td class="lb-tick">'+esc(x.tk)+'</td><td>'+lbPct(x.avg)+'</td><td>'+x.n+'</td><td>'+x.pn+'</td><td style="color:var(--muted)">'+esc(x.last||'—')+'</td></tr>'
+    var det='';for(var di=0;di<buys.length;di++){var t=buys[di];det+='<tr><td class="c">'+lbFlag(t)+esc(t.name)+'</td><td class="c">'+esc(t.date||'-')+'</td><td class="c">'+esc(t.amount||'-')+'</td><td class="c">'+lbPct(t.return_pct)+'</td></tr>';}
+    var spikeTag=e.spikeCount?' <span title="'+e.spikeCount+' 筆買進在3個月內漲破30%" style="color:#fbbf24;font-size:.75rem;font-weight:700">&#128681;'+e.spikeCount+'</span>':'';
+    rows+='<tr class="lb-row" onclick="lbHotToggle(this)"><td class="lb-tick">'+esc(x.tk)+spikeTag+'</td><td>'+lbPct(x.avg)+'</td><td>'+x.n+'</td><td>'+x.pn+'</td><td style="color:var(--muted)">'+esc(x.last||'—')+'</td></tr>'
       +'<tr class="lb-detail" style="display:none"><td colspan="5"><table><thead><tr><th>議員 Politician</th><th>買入日期 Date</th><th>金額</th><th>報酬</th></tr></thead><tbody>'+det+'</tbody></table></td></tr>';
   }
   var html='<div class="lb-wrap"><div class="lb-controls">'
@@ -451,7 +457,7 @@ function lbHotTable(side){
     var pols={};for(var z=0;z<txs.length;z++)pols[txs[z].name]=1;
     var refAvg=e.returns.length?lbMean(e.returns):null;
     txs.sort(function(p,q){return lbDate(q.date)-lbDate(p.date);});
-    var det='';for(var d=0;d<txs.length;d++){var t=txs[d];det+='<tr><td class="c">'+esc(t.name)+'</td><td class="c">'+esc(t.date||'-')+'</td><td class="c">'+esc(t.amount||'-')+'</td><td class="c">'+(t.return_pct!=null?lbPct(t.return_pct):'<span class="ret-na">&mdash;</span>')+'</td></tr>';}
+    var det='';for(var d=0;d<txs.length;d++){var t=txs[d];det+='<tr><td class="c">'+(side==='buy'?lbFlag(t):'')+esc(t.name)+'</td><td class="c">'+esc(t.date||'-')+'</td><td class="c">'+esc(t.amount||'-')+'</td><td class="c">'+(t.return_pct!=null?lbPct(t.return_pct):'<span class="ret-na">&mdash;</span>')+'</td></tr>';}
     rows+='<tr class="lb-row" onclick="lbHotToggle(this)"><td class="lb-rank">'+(i+1)+'</td><td class="lb-tick">'+esc(e.tk)+'</td><td>'+c+'</td><td>'+Object.keys(pols).length+'</td><td>'+lbPct(refAvg)+'</td></tr>'
       +'<tr class="lb-detail" style="display:none"><td colspan="5"><table><thead><tr><th>議員</th><th>日期</th><th>金額</th><th>報酬</th></tr></thead><tbody>'+det+'</tbody></table></td></tr>';
   }
@@ -479,6 +485,33 @@ function renderPeople(){
 }
 function lbPeopleThresh(){S.peopleAll=!S.peopleAll;renderPeople();}
 function lbPeopleSort(key){if(S.peopleSort.key===key)S.peopleSort.dir=S.peopleSort.dir==='asc'?'desc':'asc';else S.peopleSort={key:key,dir:'desc'};renderPeople();}
+
+function renderSpike(){
+  var box=document.getElementById('tab-spike');
+  var arr=S.spikeTrades.slice();
+  if(!arr.length){
+    box.innerHTML='<div class="lb-wrap"><div class="info">目前沒有被標記的交易。若你剛改過 <code>update.py</code>，請重新執行 <code>python update.py</code> 讓 data.json 產生 spike 欄位後再重整。</div></div>';
+    return;
+  }
+  var key=S.spikeSort.key,dir=S.spikeSort.dir;
+  function val(t){return key==='days'?(t.spike3m_days||0):key==='ret'?(t.return_pct==null?-1e9:t.return_pct):(t.spike3m_pct||0);}
+  arr.sort(function(p,q){return dir==='asc'?val(p)-val(q):val(q)-val(p);});
+  var pols={};for(var s=0;s<arr.length;s++)pols[arr[s].name]=1;
+  var rows='';for(var i=0;i<arr.length;i++){var t=arr[i];
+    rows+='<tr class="lb-row" data-name="'+esc(t.name)+'"><td class="lb-rank">'+(i+1)+'</td><td><strong>'+esc(t.name)+'</strong></td>'
+      +'<td class="lb-tick">'+esc(t.ticker||'-')+'</td><td>'+esc(t.date||'-')+'</td>'
+      +'<td><span class="ret-pos">+'+(t.spike3m_pct!=null?t.spike3m_pct.toFixed(1):'?')+'%</span></td>'
+      +'<td>'+(t.spike3m_days!=null?t.spike3m_days+' 天':'-')+'</td>'
+      +'<td>'+esc(t.amount||'-')+'</td><td>'+lbPct(t.return_pct)+'</td></tr>';
+  }
+  var html='<div class="lb-wrap"><div class="lb-hint" style="margin-bottom:.75rem">&#128681; 共 <strong style="color:#fbbf24">'+arr.length+'</strong> 筆買進在 3 個月內漲破 30%，涉及 <strong>'+Object.keys(pols).length+'</strong> 位議員・點議員看完整明細。此為「時機」訊號，非內線指控。</div>'
+    +'<table class="lb-tbl"><thead><tr><th>#</th><th>議員 Politician</th><th>Ticker</th><th>買入日期</th>'
+    +'<th onclick="lbSpikeSort(\'pct\')">峰值漲幅 &#8597;</th><th onclick="lbSpikeSort(\'days\')">到頂天數 &#8597;</th><th>金額</th>'
+    +'<th onclick="lbSpikeSort(\'ret\')">到今天 &#8597;</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  box.innerHTML=html;
+  var rs=box.querySelectorAll('.lb-row');for(var r=0;r<rs.length;r++){rs[r].addEventListener('click',function(){openMember(this.dataset.name);});}
+}
+function lbSpikeSort(key){if(S.spikeSort.key===key)S.spikeSort.dir=S.spikeSort.dir==='asc'?'desc':'asc';else S.spikeSort={key:key,dir:'desc'};renderSpike();}
 
 function openMember(name){
   S.filter={chamber:'all',party:'all'};S.search='';

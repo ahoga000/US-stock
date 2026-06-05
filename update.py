@@ -234,13 +234,26 @@ def enrich_prices(members_list):
                 if future.empty: continue
                 tp = float(future.iloc[0])
                 if math.isnan(tp) or tp <= 0: continue
-                members_list[mi]['recent'][ti].update({
+                tx_obj = members_list[mi]['recent'][ti]
+                tx_obj.update({
                     'trade_price':   round(tp, 2),
                     'current_price': round(current, 2),
                     'return_pct':    round((current - tp) / tp * 100, 2),
                     'hold_days':     (today - trade_date).days,
                 })
                 enriched += 1
+                # 買進後 3 個月內峰值漲幅 > 30% → 標記爆漲（僅 BUY）
+                if tx_kind(tx_obj.get('type', '')) == 'buy':
+                    win_end = (trade_date + timedelta(days=90)).strftime('%Y-%m-%d')
+                    window = future[future.index <= win_end]
+                    if not window.empty:
+                        peak = float(window.max())
+                        if not math.isnan(peak) and peak > 0:
+                            spct = round((peak - tp) / tp * 100, 2)
+                            pdate = window.idxmax()
+                            tx_obj['spike3m_pct']  = spct
+                            tx_obj['spike3m_days'] = (pdate.to_pydatetime() - trade_date).days
+                            tx_obj['spike3m']      = spct > 30
             print(f'${current:.2f}')
         except Exception as e:
             print(f'ERROR: {e}')
