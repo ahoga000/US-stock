@@ -283,21 +283,55 @@ def main():
     folder = OUTPUT.parent
     url = f'http://localhost:{port}/congress_dashboard.html'
 
-    # Open browser first (non-blocking), then run server in foreground
-    time.sleep(1)
-    webbrowser.open(url)
-    print(f'\nDashboard: {url}')
-    print('Press Ctrl+C to stop the server.\n')
+    import http.server, os, socket
 
-    import http.server, os
+    def open_browser():
+        # 優先用 webbrowser；失敗或無預設瀏覽器時退回 os.startfile（Windows）
+        try:
+            if webbrowser.open(url):
+                return
+        except Exception:
+            pass
+        try:
+            if hasattr(os, 'startfile'):
+                os.startfile(url)  # noqa
+                return
+        except Exception:
+            pass
+        print(f'  (無法自動開啟瀏覽器，請手動開 {url})')
+
+    def port_in_use():
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            return s.connect_ex(('127.0.0.1', port)) == 0
+
+    # 已有 server 在跑 → 不重綁，直接開瀏覽器連過去
+    if port_in_use():
+        print(f'\nServer 已在 {port} 執行中。Dashboard: {url}')
+        open_browser()
+        return
+
     os.chdir(folder)
     handler = http.server.SimpleHTTPRequestHandler
     handler.log_message = lambda *a: None  # silence request logs
-    with http.server.HTTPServer(('', port), handler) as httpd:
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print('\nServer stopped.')
+    try:
+        httpd = http.server.HTTPServer(('', port), handler)
+    except OSError as e:
+        # 綁 port 失敗也不崩潰，照樣把儀表板開起來
+        print(f'\n無法在 {port} 啟動 server（{e}）。仍嘗試開啟儀表板：{url}')
+        open_browser()
+        return
+
+    print(f'\nDashboard: {url}')
+    print('Press Ctrl+C to stop the server.\n')
+    time.sleep(0.5)
+    open_browser()
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print('\nServer stopped.')
+    finally:
+        httpd.server_close()
 
 if __name__ == '__main__':
     try:
