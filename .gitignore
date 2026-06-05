@@ -1,5 +1,7 @@
 data.json
 *.png
+*.log
 probe_*.py
+verify*.py
 __pycache__/
 *.pyc
